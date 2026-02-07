@@ -326,7 +326,7 @@ Visualizations are saved to `results/visualization_sample_*.png`. Each figure sh
 
 1. **Small dataset**: 364 images is extremely small for deep learning. Mitigated with heavy augmentation, frozen backbone, and LoRA, but still limits generalization.
 
-2. **Mask format ambiguity**: The BCCD dataset masks use color-coding that varies. The pipeline auto-detects the format and maps colors to classes, but may need manual verification.
+2. **Mask format ambiguity**: The BCCD dataset masks use color-coding that varies. The pipeline auto-detects the format and maps colors to classes, but may need manual verification. This mismatch in the number of class provided in the masks and the mask parser is the reaosn why the training loss is higher than the validation loss and we have IoU = 0 for WBCs and platelets. In the end, I ended up generating a more complicated (however much more useful) architecture for cell typing rather than cell detection. Adjusting the number of classes to 2 (background and cell) would fix all these issues. That being said, the probability maps for the nuclear-pixel decoder head are correct and is the outcome we are searching for in binary instance segmentation.
 
 3. **HV map invalidation**: Geometric augmentations invalidate pre-computed distance maps. Splitting augmentation into geometric + photometric phases and recomputing HV maps adds ~3x data loading overhead.
 
@@ -334,23 +334,22 @@ Visualizations are saved to `results/visualization_sample_*.png`. Each figure sh
 
 5. **Class imbalance**: RBCs vastly outnumber WBCs and platelets. Mitigated with class-weighted CE loss and per-class Dice.
 
-6. **Unfavorable backbone model deployed**: Unfortunately, the UNI model requires permission from the authors to access their weights, which we could not get approval for in the time constraint. Thus, we used a more general purpose foundation model (ImageNet) as the wrapper to fine-tune on.
 
 ### Potential Improvements
 
-1. **Stain normalization**: Apply Macenko or Reinhard stain normalization as a preprocessing step. Blood smear staining varies significantly between slides, and normalization would improve generalization.
+1. **User-inputted number of cell classes** Automatically adjust combined loss function (and thus IoU and MAP indices).
 
-2. **Test-time augmentation (TTA)**: Average predictions across multiple augmented views (flips, rotations) at inference time for more robust results.
+3. **Test-time augmentation (TTA)**: Average predictions across multiple augmented views (flips, rotations) at inference time for more robust results.
 
-3. **UNI v2**: The newer UNI2-h model (ViT-H, trained on 200M+ images) would provide stronger features. Drop-in replacement since the architecture is the same family.
+4. **UNI v2**: The newer UNI2-h model (ViT-H, trained on 200M+ images) would provide stronger features. Drop-in replacement since the architecture is the same family.
 
-4. **StarDist-style output**: Replace HoVer-Net with star-convex polygon predictions for more precise boundaries on round cells like blood cells.
+5. **StarDist-style output**: Replace HoVer-Net with star-convex polygon predictions for more precise boundaries on round cells like blood cells.
 
-5. **Larger dataset**: Combine BCCD with other blood cell datasets (PBC dataset, ALL-IDB) for more training data.
+6. **Larger dataset**: Combine BCCD with other blood cell datasets (PBC dataset, ALL-IDB) for more training data.
 
-6. **Post-processing optimization**: Bayesian optimization or grid search over watershed hyperparameters on the validation set.
+7. **Post-processing optimization**: Bayesian optimization or grid search over watershed hyperparameters on the validation set.
 
-7. **Multi-scale inference**: Process images at multiple resolutions and merge predictions for better handling of cells at different sizes (platelets vs WBCs).
+8. **Multi-scale inference**: Process images at multiple resolutions and merge predictions for better handling of cells at different sizes (platelets vs WBCs).
 
 ## Project Structure
 
