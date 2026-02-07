@@ -4,7 +4,9 @@ Cell instance segmentation on the BCCD blood cell dataset, using the UNI foundat
 
 ### Why Instance Segmentation with a Semantic Foundation Model?
 
-UNI is a pathology foundation model trained via DINOv2 on over 100 million H&E-stained tissue patches. Its vision transformer attention heads encode rich *semantic* features — tissue architecture, staining patterns, nuclear texture, and cell morphology — but they have no built-in notion of individual object instances. Standard semantic segmentation can label pixels as "WBC" or "RBC," but it cannot distinguish *which* WBC or *which* RBC a pixel belongs to. In clinical hematology, the downstream task demands more: counting individual cells, measuring per-cell morphology, and classifying each cell independently. This requires **instance segmentation** — delineating every cell as a separate object. Blood smears make this especially challenging because red blood cells frequently overlap and touch, causing semantic masks to merge adjacent cells into a single connected region. Our approach bridges this gap by pairing UNI's frozen semantic features with a HoVer-Net-inspired decoder that regresses per-pixel horizontal and vertical distance maps pointing toward each cell's centroid. Sobel gradients on these distance maps create sharp energy boundaries between touching cells, which marker-controlled watershed then cuts into individual instances. By keeping UNI's backbone frozen (Phase 1) and later adding lightweight LoRA adapters (Phase 2), we repurpose its 304M parameters of domain-specific attention as input to an instance-aware decoder — converting patch-level semantic representations into the instance-level predictions needed for cell counting, classification, and morphological analysis.
+UNI is a pathology foundation model trained via DINOv2 on over 100 million H&E-stained tissue patches. Its vision transformer attention heads encode rich *semantic* features — tissue architecture, staining patterns, nuclear texture, and cell morphology, but they have no way of determining individual object instances. Standard semantic segmentation can label pixels of distinct cell types, but it cannot distinguish *which* WBC or *which* RBC a pixel belongs to. This requires **instance segmentation**, delineating every cell as a separate object. Blood smears make this especially challenging because red blood cells frequently overlap and touch, causing semantic masks to merge adjacent cells into a single connected region. My approach bridges mitigates this challenge by pairing UNI's frozen semantic features with a HoVer-Net-inspired decoder that regresses per-pixel horizontal and vertical distance maps pointing toward each cell's centroid. Sobel filters on these distance maps create sharp energy boundaries between touching cells, which marker-controlled watershed then cuts into individual instances. By keeping UNI's backbone frozen (Phase 1) and later adding lightweight low-rank adapters (Phase 2), the UNI model is repurposed from its 304M parameters of domain-specific attention as input to an instance-aware decoder — converting patch-level semantic representations into the instance-level predictions needed for cell counting, classification, and morphological analysis.
+
+NOTE: Since this particular dataset only contains binary cell masks without cell type labels, we can only attempt to predict cell objects, not predict the cell type. However, this pipeline goes above and beyond and proposes a solution to multi-class instance segmentation. Since we have just two classes (0 - background, 1 - cell), the prediction metrics and probability heatmaps at the end are based on binary classification. The decoder and loss function is built to segment 4 cell classes (0 - background, 1 - RBC, 2 - WBC, 3 - Platelet). This is handled in the cell block with the function **parse_mask_to_instances**, which converts the mask color to class. Since we have just black and white, the pipeline will count every RBC labeled "1" as a cell, while WBCs and platelets are also counted as just cells. Thus, the result for binary segmentation is reflected in the precision and DICE metrics for RBC, while WBC and platelets are 0 (since we lack the labels).
 
 ## Architecture
 
@@ -35,13 +37,15 @@ Input (224x224) -> UNI ViT-L/16 (frozen/LoRA) -> DPT Feature Pyramid -> 3 Decode
 - **HV branch**: MSE + MSGE (Sobel gradient error) — enforces sharp boundary transitions critical for watershed; weighted 2x
 - **NC branch**: Weighted CrossEntropy (RBC=0.3, WBC=3.0, Platelet=5.0) + per-class Dice — compensates for class imbalance
 
+Total loss function is the weighted sum of the individual decover head losses.
+
 ## Setup
 
 ### Prerequisites
 
-- NVIDIA GPU with >= 16GB VRAM (tested on V100 32GB)
+- NVIDIA GPU with >= 16GB VRAM (tested on V100 32GB and L40s)
 - Miniconda or Anaconda
-- HuggingFace account with accepted terms at [MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI)
+- HuggingFace account with personal token and access from [MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI)
 
 ### Installation
 
@@ -96,6 +100,10 @@ The validation set is carved from the training partition using `sklearn.train_te
 3. **No k-fold cross-validation.** While k-fold would make more efficient use of data, it multiplies training time by k — impractical when each Phase 1 run is 100 epochs on a ViT-L backbone. The two-phase training pipeline (Phase 1 + Phase 2) already doubles the training cost, making k-fold a 2k× multiplier. A single held-out validation set is the standard compromise for deep learning on medical imaging datasets of this size.
 
 4. **Stratification is not applied.** Blood smear images contain all three cell types (RBC, WBC, Platelet) in most frames, so a random split naturally produces balanced class representation across partitions. Stratified splitting by dominant cell type would add complexity without meaningful benefit since per-image class distributions are relatively uniform.
+
+## Image Preprocessing
+
+I opted out of stain normalization (e.g. Macenko, Reinhard, Rajpoot, histogram equalization) since the background for majority of these patches had clear contrasts with the cell boundaries. Performing any equalization method would make cell delineation more challenging. These are images of cytopathology, which unlike histopathology, lack stromal tissue (the real culprit of stain abnormalities). Cytopathology is an area I have years of experience in - stain normalization is best used in cytopathology when cell clusters have varying chromatin distributions within their nuclei.
 
 ## Usage
 
