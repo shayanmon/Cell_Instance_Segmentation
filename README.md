@@ -337,7 +337,7 @@ Visualizations are saved to `results/visualization_sample_*.png`. Each figure sh
 
 ### Potential Improvements
 
-1. **User-inputted number of cell classes** Automatically adjust combined loss function (and thus IoU and MAP indices).
+1. **User-inputted number of cell classes** Automatically adjust combined loss function (and thus IoU and MAP indices). If the user provides cell-labelled ground truth masks, the pipeline will classify by cell types.
 
 3. **Test-time augmentation (TTA)**: Average predictions across multiple augmented views (flips, rotations) at inference time for more robust results.
 
